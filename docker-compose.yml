@@ -1,0 +1,10 @@
+version: '2'
+
+services:
+ stm32-lynx:
+  image: opendlv-device-stm32-lynx:v0.0.2
+  network_mode: "host"
+  devices:
+  - "/dev/ttyACM0:/dev/ttyACM0"
+  command: "opendlv-device-stm32-lynx --cid=219 --freq=30 -id=1 --verbose=1"
+  
