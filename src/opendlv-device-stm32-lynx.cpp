@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
         //Test receiving of incoming requests
         auto onSwitchStateReading{[](cluon::data::Envelope &&envelope)
             {
-                cout << "Something\n";
+                cout << "Something here\n";
             }};
             od4.dataTrigger(opendlv::proxy::SwitchStateReading::ID(), onSwitchStateReading);
 
