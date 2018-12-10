@@ -19,20 +19,12 @@ MAINTAINER Christian Berger "christian.berger@gu.se"
 RUN echo "@testing http://nl.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories
 RUN apk update && apk upgrade && \
 	apk --no-cache add \
-		util-linux \
-		cmake \
-		bash \
-		g++ \
-		make \
-		upx \
-		git \
-		mercurial \
-		libmount \
-		libtbb@testing \
-		libtbb-dev@testing \
-		libgomp \
-		libtbb@testing \
-		libtbb-dev@testing
+		linux-headers \
+        	ca-certificates \
+        	cmake \
+        	g++ \
+        	git \
+        	make
 		
 WORKDIR /tmp
 
@@ -44,8 +36,8 @@ ADD . /opt/sources/
 WORKDIR /opt/sources
 RUN mkdir -p build && \
 	cd build && \
-	cmake -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/tmp/opendlv-device-stm32-lynx-dest .. && \ whereis serial.h && \
-	make -j3 && make test && make install && upx -9 /tmp/opendlv-device-stm32-lynx-dest/bin/opendlv-device-stm32-lynx
+	cmake -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/tmp/opendlv-device-stm32-lynx-dest .. && \
+	make -j3 && make test && make install 
 
 #Deploy the microservice
 FROM alpine:3.8
@@ -54,9 +46,6 @@ MAINTAINER Christian Berger "christian.berger@gu.se"
 #Start microservice
 WORKDIR /usr/bin
 
-COPY --from=builder /usr/local/include/ /usr/include/
-COPY --from=builder /usr/local/lib /usr/lib/
-copy --from=builder /usr/lib/ /usr/lib/
 COPY --from=builder /tmp/opendlv-device-stm32-lynx-dest/bin/opendlv-device-stm32-lynx .
 RUN apk update && apk add glib
 CMD ["/usr/bin/opendlv-device-stm32-lynx"]

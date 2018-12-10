@@ -53,7 +53,7 @@ include_directories(SYSTEM ${CMAKE_BINARY_DIR})
 
 ################################################################################
 # Gather all object code first to avoid double compilation. This needs to be done for all added objects, can become very long? Why is this object and not static which works
-add_library(${PROJECT_NAME}-core STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_NAME}.cpp)
+add_library(${PROJECT_NAME}-core STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_NAME}.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/proxy-stm32.cpp)
 add_custom_target(generate_opendlv_standard_message_set_hpp DEPENDS ${CMAKE_BINARY_DIR}/opendlv-standard-message-set.hpp)
 add_dependencies(${PROJECT_NAME}-core generate_opendlv_standard_message_set_hpp)
 
