@@ -14,7 +14,14 @@
     limitations under the License.
 */
 #include "DiscoveryBoard.h"
-
+/*===========================================================================*/
+/* USB Read related stuff.                                                        */
+/*===========================================================================*/
+#define BUFFER_LENGTH 128
+int writePtr = 0;
+size_t bytesRead = 0;
+char receiveBuffer[BUFFER_LENGTH];
+char chunkBuffer[10];
 /*===========================================================================*/
 /* ADC related stuff.                                                        */
 /*===========================================================================*/
@@ -117,29 +124,124 @@ static msg_t usbThread(void *arg) {
     chThdSleepMilliseconds(time);
   }
 }
+// Decode requests sent from docker
+/* Requests are formatted as netstring: <number of bytes><':'><message><','>
+both sender and receive must agree on number of bytes,
+a new netstring starts after the delimiter ','
+ */	
+// A simple atoi() function 
+int myAtoi(char *str) 
+{ 
+    int res = 0; // Initialize result 
+   
+    // Iterate through all characters of input string and 
+    // update result 
+    int i;
+    for (i = 0; str[i] != '\0'; ++i) 
+        res = res*10 + str[i] - '0'; 
+   
+    // return result. 
+    return res; 
+} 
 
-//Read thread, receive command from docker to turn on/off green led
-char bufferRead[64];
-bool readOK = false;
-static WORKING_AREA(readThreadWA, 128);
+int pinTest = 0;
+int valTest = 0;
+char* messageBuffer[16];
+void decodeRequest(uint8_t* msg){
+		char command = msg[0];
+		//Parse from the first '.' to the next '.' to get the pin string length
+		char* ptr = msg+2;
+		//create pin string;
+		char pinStr[2];
+		int i;
+		for(i=0; i<2 || *ptr != '.' || *ptr != '\0' ;i++){
+			pinStr[i] = *ptr;
+			ptr++;
+		}
+		
+		ptr++;
+		//create value string;
+		char valStr[5];
+		for(i=0; i<5 || *ptr != ',' || *ptr != '\0' ;i++){
+			valStr[i] = *ptr;
+			ptr++;
+		}
+		
+		//Convert strings into integer
+		int pin = myAtoi(pinStr);
+		int value = myAtoi(valStr);
+		
+		//For testing only: sender sends "d.1.1" (set pin with identifier 1 to ON"
+		
+		
+}
+//READ THREAD
+//Constantly read until reach '\n', receive command from docker to turn on/off green led
+//------------------------------SYNC THIS CODE WITH MAX--------------------------------------
+void decodeNextNetstring(void) {
+	// Netstrings have the following format:
+	// ASCII Number representing the length of the payload + ':' + payload + ','
+    
+	// Start decoding only if we have received enough data.
+	if (writePtr > 3) {
+		char *colonSign = NULL;
+		unsigned int lengthOfPayload = strtol(receiveBuffer, &colonSign, 10);
+		if (*colonSign == 0x3a) {
+			// Found colon sign.
+			
+			// First, check if the buffer is as long as it is stated in the netstring.
+			if (writePtr < (int)lengthOfPayload) {
+			// Received data is too short. Skip further processing this part.
+				return;
+			}
+
+			// Now, check if (receiveBuffer + 1 + lengthOfPayload) == ','.
+			if ((colonSign[1 + lengthOfPayload]) == 0x2c) {
+				// Successfully found a complete Netstring.
+				memcpy(messageBuffer, colonSign + 1, lengthOfPayload);
+				//dataFromHost.length = lengthOfPayload;
+
+				// Determine the size of Netstring.
+				int lengthOfNetstring = (colonSign + 1 + lengthOfPayload + 1) - receiveBuffer;
+				 // Remove decoded Netstring from receiveBuffer.
+				memmove(receiveBuffer, colonSign + 1 + lengthOfPayload + 1, (BUFFER_LENGTH - lengthOfNetstring));
+
+				// Move the writer pointer to the right position after consuming the read bytes.
+				writePtr -= lengthOfNetstring;
+
+				// Process successfully decoded payload.
+				//processPayload();
+			}
+		}
+	}    
+}
+
+void consumeNetstrings(void) {
+  int oldWritePtr = 0; // Store the old position of the writePtr to make sure to not end up in an infinite loop.
+  while ((writePtr > 3) && (oldWritePtr != writePtr)) {
+  	oldWritePtr = writePtr;
+  	decodeNextNetstring();
+  }    
+}
+
+
+static WORKING_AREA(readThreadWA, 512);
 static msg_t readThread(void *arg) {
   chRegSetThreadName("read thread");
   while (TRUE) {
-  
-  	//read data
-  	
-  	//int bytesRead = sdRead(&SDU1, (uint8_t*)bufferRead, 3);
-  	int bytesRead = sdGetLine(&SDU1, (uint8_t*)bufferRead);
-  	chThdSleepMilliseconds(1);
-  	//set flag for done reading
-  	readOK = true;
-  	if(bytesRead > 0){
-  	//toggle LED4
-  		palSetPad(GPIOD, GPIOD_LED4);
-  	}
-  	else
-    	palClearPad(GPIOD, GPIOD_LED4);
-  }
+    bytesRead = sdReadTimeout(&SDU1, (uint8_t*)chunkBuffer, 10, timeOut);
+    
+    if (bytesRead > 0) {
+			// Add received bytes to buffer to parse data from.
+			memcpy(receiveBuffer+writePtr, chunkBuffer, bytesRead);
+			writePtr += bytesRead;
+
+			// Try to decode netstrings from receiveBuffer.
+			consumeNetstrings();
+		}
+  	// Allow for thread scheduling.
+    chThdSleepMilliseconds(50);
+  }  	
 }
 
 //WRITE THREAD
@@ -186,7 +288,6 @@ static msg_t writeThread(void *arg) {
   			bytesWritten = sdWriteTimeout(&SDU1, (uint8_t*)bufferWrite, bytesToWrite, timeOut);
   			bytesToWriteLeft -= bytesWritten;
   		}
-  		readOK = false;
   		bytesToWrite = 0;
   		blinkLedBlue = false;
 
@@ -201,7 +302,7 @@ static msg_t writeLedThread(void *arg) {
   chRegSetThreadName("write led blue");
   while (TRUE) {
     systime_t time;
-    time = blinkLedBlue == true ? 75 : 500;
+    time = blinkLedBlue == true ? 500 : 75;
     	palClearPad(GPIOD, GPIOD_LED6);
     	chThdSleepMilliseconds(time);
     	palSetPad(GPIOD, GPIOD_LED6);
@@ -248,7 +349,7 @@ int main(void) {
   
 
   // Creates the blinker thread. 
-  chThdCreateStatic(usbThreadWA, sizeof(usbThreadWA), LOWPRIO, usbThread, NULL);
+  //chThdCreateStatic(usbThreadWA, sizeof(usbThreadWA), LOWPRIO, usbThread, NULL);
   // WRITE thread
   chThdCreateStatic(writeThreadArea, sizeof(writeThreadArea), HIGHPRIO, writeThread, NULL);
   chThdCreateStatic(writeLedThreadWA, sizeof(writeLedThreadWA), LOWPRIO, writeLedThread, NULL);
